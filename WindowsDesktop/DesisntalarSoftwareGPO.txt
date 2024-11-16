@@ -1,0 +1,16 @@
+' Create a WSH Shell object:
+Set wshShell = CreateObject( "WScript.Shell" )
+
+on error resume next
+Var1=wshShell.RegRead("HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\00DCE4985BF98A24786E0EEFF5BC9D1C\InstallProperties\UninstallString")
+if err.number=0 then
+	wshShell.Run "cmd /c " & Var1 & " /qn /lv c:\Desinstalacion.log"
+end if
+err.clear
+
+
+Var2=wshShell.RegRead("HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\1F60844119CDAD34A9845BE6FD5A64A9\InstallProperties\UninstallString")
+if err.number=0 then
+	wshShell.Run "cmd /c " & Var2 & " /qn /lv c:\Desinstalacion.log"
+end if
+err.clear

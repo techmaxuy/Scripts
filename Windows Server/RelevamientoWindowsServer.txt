@@ -1,0 +1,24 @@
+$fileReporte = Get-ChildItem -Path ".\*" -Include ReporteRelevamiento.txt -Recurse
+$fileEvento = Get-ChildItem -Path ".\*" -Include ErrorEvents.txt -Recurse
+
+if (Test-Path -Path $fileReporte -PathType Leaf) {
+    Remove-Item $fileReporte -Force
+
+}
+
+if (Test-Path -Path $fileEvento -PathType Leaf) {
+    Remove-Item $fileEvento -Force
+
+}
+
+$env:computername | Out-File -FilePath .\ReporteRelevamiento.txt -Append
+
+Get-HotFix | Select Description,HotFixID,InstalledOn | Out-File -FilePath .\ReporteRelevamiento.txt -Append
+
+Get-EventLog -LogName system -EntryType Error | select EntryType,InstanceId,Source,Message,TimeGenerated | Out-File -FilePath .\ErrorEvents.txt -Append
+Get-EventLog -LogName application -EntryType Error | select EntryType,InstanceId,Source,Message,TimeGenerated | Out-File -FilePath .\ErrorEvents.txt -Append
+
+Get-Volume | select DriveLetter,DriveType,FileSystem,HealthStatus,{$_.Size/1GB},{$_.SizeRemaining/1GB} | Out-File -FilePath .\ReporteRelevamiento.txt -Append
+Systeminfo | Out-File -FilePath .\ReporteRelevamiento.txt -Append
+
+(Get-WmiObject Win32_Pagefile) –eq $null | Out-File -FilePath .\ReporteRelevamiento.txt -Append
