@@ -21,52 +21,6 @@ function Get-VAAPaths {
     }
 }
 
-function Install-VeeamAutoAgent {
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [switch]$Force
-    )
-
-    $p = Get-VAAPaths
-
-    if (!(Test-Path $p.InstallRoot)) {
-        New-Item -ItemType Directory -Path $p.InstallRoot -Force | Out-Null
-    }
-    if (!(Test-Path $p.InstallDir)) {
-        New-Item -ItemType Directory -Path $p.InstallDir -Force | Out-Null
-    }
-
-    # Copiar el módulo completo al destino (sobre-escribe con -Force)
-    # Fuente: carpeta del módulo actual ($PSScriptRoot es ...\VeeamAutoAgent)
-    $src = $PSScriptRoot
-    $dst = $p.InstallDir
-
-    if ($PSCmdlet.ShouldProcess("$src -> $dst","Copy module")) {
-        Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force
-    }
-
-    # Crear/actualizar el runner que importa el módulo desde C:\scripts y ejecuta la función principal
-    $runner = @"
-# Auto-generado por Install-VeeamAutoAgent
-# Runner del agente: importa el módulo y ejecuta la función principal
-
-# Asegurar política de ejecución amigable con tareas programadas
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force | Out-Null
-
-# Importar el módulo desde la carpeta instalada
-\$moduleRoot = '$($p.InstallDir)'
-\$psd1 = Join-Path \$moduleRoot 'VeeamAutoAgent.psd1'
-Import-Module \$psd1 -Force
-
-# Ejecutar la lógica principal del agente
-Invoke-VeeamAutoAgent
-"@
-
-    Set-Content -Path $p.RunnerPath -Value $runner -Encoding UTF8
-
-    Write-Host "VeeamAutoAgent instalado en $($p.InstallDir)"
-    Write-Host "Runner creado en $($p.RunnerPath)"
-}
 
 function Register-VeeamAutoAgentTask {
     [CmdletBinding(SupportsShouldProcess)]
@@ -92,7 +46,7 @@ function Register-VeeamAutoAgentTask {
     $start = (Get-Date).AddMinutes(1)  # arranca en 1 minuto
     $trigger = New-ScheduledTaskTrigger -Once -At $start
     #$trigger.RepetitionInterval = (New-TimeSpan -Minutes $IntervalMinutes)
-    $trigger.RepetitionDuration = [TimeSpan]::MaxValue
+    #$trigger.RepetitionDuration = [TimeSpan]::MaxValue
 
     # Principal: SYSTEM con privilegios altos
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
@@ -122,6 +76,50 @@ function Register-VeeamAutoAgentTask {
 
     Write-Host "Tarea programada '$($p.TaskName)' registrada. Ejecutará el agente cada $IntervalMinutes minuto(s) sin superponerse."
 }
+
+
+function Install-VeeamAutoAgent {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [switch]$Force
+    )
+
+    $p = Get-VAAPaths
+
+
+    if (!(Test-Path $p.InstallRoot)) {
+        New-Item -ItemType Directory -Path $p.InstallRoot -Force | Out-Null
+    }
+    if (!(Test-Path $p.InstallDir)) {
+        New-Item -ItemType Directory -Path $p.InstallDir -Force | Out-Null
+    }
+
+
+    # Crear/actualizar el runner que importa el módulo desde C:\scripts y ejecuta la función principal
+    $runner = @"
+# Auto-generado por Install-VeeamAutoAgent
+# Runner del agente: importa el módulo y ejecuta la función principal
+
+# Asegurar política de ejecución amigable con tareas programadas
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force | Out-Null
+
+# Importar el módulo desde la carpeta instalada
+\$moduleRoot = '$($p.InstallDir)'
+\$psd1 = Join-Path \$moduleRoot 'VeeamAutoAgent.psd1'
+Import-Module \$psd1 -Force
+
+# Ejecutar la lógica principal del agente
+Invoke-VeeamAutoAgent
+"@
+
+    Set-Content -Path $p.RunnerPath -Value $runner -Encoding UTF8
+
+    Write-Host "VeeamAutoAgent instalado en $($p.InstallDir)"
+    Write-Host "Runner creado en $($p.RunnerPath)"
+    Register-VeeamAutoAgentTask -Force
+
+}
+
 
 function Unregister-VeeamAutoAgentTask {
     [CmdletBinding(SupportsShouldProcess)]
