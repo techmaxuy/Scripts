@@ -77,3 +77,51 @@ En servidores:
 Update-PSResource -Name 'VeeamAutoAgent' -Repository 'GitHubPkgs' -Credential $cred
 # o versión específica:
 # Install-PSResource -Name 'VeeamAutoAgent' -Repository 'GitHubPkgs' -Version '0.1.1
+
+# Instalacion manual del modulo
+Método 1 (el más simple): copiar la carpeta del módulo ya expandida
+
+No necesitás ningún “repo” ni NuGet. Solo copiar y listo.
+
+En una PC con internet (o tu laptop)
+
+Dejá el módulo armado con esta estructura:
+
+VeeamAutoAgent\
+  VeeamAutoAgent.psd1
+  VeeamAutoAgent.psm1
+
+
+(Opcional) Verificá que importe bien:
+
+Import-Module .\VeeamAutoAgent\VeeamAutoAgent.psd1 -Force
+
+
+Copiá esa carpeta a un pendrive o share interno.
+
+En el servidor sin internet
+
+Pegá la carpeta en la ruta estándar de módulos:
+
+PowerShell 5.1:
+
+C:\Program Files\WindowsPowerShell\Modules\VeeamAutoAgent\<VERSIÓN>\
+
+
+PowerShell 7+:
+
+C:\Program Files\PowerShell\Modules\VeeamAutoAgent\<VERSIÓN>\
+
+
+(Usá el número de versión que pusiste en el .psd1, por ej. 0.1.0.)
+
+Importá y ejecutá tu bootstrap:
+
+Import-Module VeeamAutoAgent -Force
+Install-VeeamAutoAgent
+Register-VeeamAutoAgentTask -IntervalMinutes 5
+
+
+Tip: confirmá que PowerShell “ve” el módulo:
+
+Get-Module -ListAvailable VeeamAutoAgent | Select Name,Version,Path

@@ -91,7 +91,7 @@ function Register-VeeamAutoAgentTask {
     # Trigger: una sola vez (ahora) con repetición indefinida cada N minutos
     $start = (Get-Date).AddMinutes(1)  # arranca en 1 minuto
     $trigger = New-ScheduledTaskTrigger -Once -At $start
-    $trigger.RepetitionInterval = (New-TimeSpan -Minutes $IntervalMinutes)
+    #$trigger.RepetitionInterval = (New-TimeSpan -Minutes $IntervalMinutes)
     $trigger.RepetitionDuration = [TimeSpan]::MaxValue
 
     # Principal: SYSTEM con privilegios altos
