@@ -204,7 +204,7 @@ function Update-VeeamAutoAgentConfig {
         [Parameter(Mandatory, Position=0)]
         [Alias('rootWorkFolder','Path')]
         [ValidateNotNullOrEmpty()]
-        [string]$RootWorkFolder
+        [string]$WorkFolder
     )
 
     $p = Get-VAAPaths
@@ -214,10 +214,10 @@ function Update-VeeamAutoAgentConfig {
     $configFile = Join-Path $configDir 'config.json'
 
     # Validación de la ruta de trabajo
-    $rw = Test-VAAPathReadWrite -Path $RootWorkFolder
-    if (-not $rw.Exists) { throw "La ruta '$RootWorkFolder' no existe o no es un directorio." }
-    if (-not $rw.Read)   { throw "No hay permisos de LECTURA en '$RootWorkFolder'." }
-    if (-not $rw.Write)  { throw "No hay permisos de ESCRITURA en '$RootWorkFolder'." }
+    $rw = Test-VAAPathReadWrite -Path $WorkFolder
+    if (-not $rw.Exists) { throw "La ruta '$WorkFolder' no existe o no es un directorio." }
+    if (-not $rw.Read)   { throw "No hay permisos de LECTURA en '$WorkFolder'." }
+    if (-not $rw.Write)  { throw "No hay permisos de ESCRITURA en '$WorkFolder'." }
 
     # Asegurar carpetas de instalación y de config
     if (-not (Test-Path -LiteralPath $p.InstallDir)) { New-Item -ItemType Directory -Path $p.InstallDir -Force | Out-Null }
@@ -229,7 +229,7 @@ function Update-VeeamAutoAgentConfig {
         UpdatedUtc     = (Get-Date).ToUniversalTime().ToString('u')
         Encrypted      = $true
         Values         = [ordered]@{
-            RootWorkFolder = (ConvertTo-VAAEncryptedBase64 -PlainText $RootWorkFolder)
+            WorkFolder = (ConvertTo-VAAEncryptedBase64 -PlainText $WorkFolder)
         }
     }
 
@@ -255,6 +255,11 @@ function Invoke-VeeamAutoAgent {
     #>
     try {
 
+                $logDir = Join-Path 'C:\scripts' 'VeeamAutoAgent\logs'
+        if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+        $log = Join-Path $logDir ('run-' + (Get-Date -Format 'yyyyMMdd') + '.log')
+        "[$(Get-Date -Format 'u')] VeeamAutoAgent ejecutado (stub)." | Out-File -FilePath $log -Append -Encoding utf8
+
                 # === Cargar configuración (RootWorkFolder) ===
         $p = Get-VAAPaths
         $configFile = Join-Path $p.InstallDir 'Config\config.json'
@@ -267,7 +272,7 @@ function Invoke-VeeamAutoAgent {
                 $workRoot = if ($cfg.Encrypted) {
                     ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.RootWorkFolder
                 } else {
-                    [string]$cfg.Values.RootWorkFolder
+                    [string]$cfg.Values.RootWorkFolder | Out-File -FilePath $log -Append -Encoding utf8
                 }
             }
         }
@@ -280,15 +285,17 @@ function Invoke-VeeamAutoAgent {
         if (-not ($rw.Exists -and $rw.Read -and $rw.Write)) {
             $old = $workRoot
             $workRoot = $p.InstallDir
-            $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'."
+            $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'." | Out-File -FilePath $log -Append -Encoding utf8
+        }
+
+        if ($warn) {
+            $warn | Out-File -FilePath $log -Append -Encoding utf8
+        } else {
+            "Usando RootWorkFolder: $workRoot" | Out-File -FilePath $log -Append -Encoding utf8
         }
 
 
-        $logDir = Join-Path 'C:\scripts' 'VeeamAutoAgent\logs'
-        if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-        $log = Join-Path $logDir ('run-' + (Get-Date -Format 'yyyyMMdd') + '.log')
-        "[$(Get-Date -Format 'u')] VeeamAutoAgent ejecutado (stub)." | Out-File -FilePath $log -Append -Encoding utf8
     } catch {
-        Write-Error $_
+        Write-Error $_ | Out-File -FilePath $log -Append -Encoding utf8
     }
 }
