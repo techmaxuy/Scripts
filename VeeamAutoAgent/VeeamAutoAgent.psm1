@@ -268,17 +268,25 @@ function Invoke-VeeamAutoAgent {
 
         if (Test-Path -LiteralPath $configFile) {
             $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+            "[$(Get-Date -Format 'u')] Config file leido." | Out-File -FilePath $log -Append -Encoding utf8
+
             if ($cfg -and $cfg.Values -and $cfg.Values.WorkFolder) {
                 $workRoot = if ($cfg.Encrypted) {
                     ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.WorkFolder
                 } else {
-                    [string]$cfg.Values.WorkFolder | Out-File -FilePath $log -Append -Encoding utf8
+                    [string]$cfg.Values.WorkFolder
                 }
             }
+        } else {
+           "[$(Get-Date -Format 'u')] Archivo de configuración no encontrado en '$configFile'. Usando carpeta de instalación." | Out-File -FilePath $log -Append -Encoding utf8
         }
+
+        "[$(Get-Date -Format 'u')] Test1." | Out-File -FilePath $log -Append -Encoding utf8
 
         # Fallback si no hay config o es inválida
         if (-not $workRoot) { $workRoot = $p.InstallDir }
+
+        "[$(Get-Date -Format 'u')] Test2." | Out-File -FilePath $log -Append -Encoding utf8
 
         # Validar existencia y permisos R/W
         $rw = Test-VAAPathReadWrite -Path $workRoot
@@ -288,11 +296,36 @@ function Invoke-VeeamAutoAgent {
             $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'." | Out-File -FilePath $log -Append -Encoding utf8
         }
 
+        "[$(Get-Date -Format 'u')] Test3." | Out-File -FilePath $log -Append -Encoding utf8
+
         if ($warn) {
             $warn | Out-File -FilePath $log -Append -Encoding utf8
         } else {
             "Usando RootWorkFolder: $workRoot" | Out-File -FilePath $log -Append -Encoding utf8
         }
+
+        # Aquí va la lógica real del agente...
+        # Placeholder para la lógica del agente
+        "[$(Get-Date -Format 'u')] Lógica del agente iniciada (stub)." | Out-File -FilePath $log -Append -Encoding utf8
+
+        # === Conteo de "tareas" (archivos) en la carpeta de trabajo ===
+        try {
+            # Conteo NO recursivo; sólo archivos (no carpetas)
+            $files = Get-ChildItem -LiteralPath $workRoot -File -Force -ErrorAction Stop
+            $taskCount = ($files | Measure-Object).Count
+
+            if ($taskCount -gt 0) {
+                $lines += "Tareas encontradas: $taskCount" | Out-File -FilePath $log -Append -Encoding utf8
+            } else {
+                $lines += "No se encontraron tareas en '$workRoot'." | Out-File -FilePath $log -Append -Encoding utf8
+            }
+        }
+        catch {
+            $lines += "ERROR al listar '$workRoot': $($_.Exception.Message)" | Out-File -FilePath $log -Append -Encoding utf8
+        }
+
+
+        "[$(Get-Date -Format 'u')] VeeamAutoAgent finalizado." | Out-File -FilePath $log -Append -Encoding utf8
 
 
     } catch {
