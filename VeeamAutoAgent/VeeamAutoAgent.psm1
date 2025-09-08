@@ -268,11 +268,11 @@ function Invoke-VeeamAutoAgent {
 
         if (Test-Path -LiteralPath $configFile) {
             $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
-            if ($cfg -and $cfg.Values -and $cfg.Values.RootWorkFolder) {
+            if ($cfg -and $cfg.Values -and $cfg.Values.WorkFolder) {
                 $workRoot = if ($cfg.Encrypted) {
-                    ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.RootWorkFolder
+                    ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.WorkFolder
                 } else {
-                    [string]$cfg.Values.RootWorkFolder | Out-File -FilePath $log -Append -Encoding utf8
+                    [string]$cfg.Values.WorkFolder | Out-File -FilePath $log -Append -Encoding utf8
                 }
             }
         }
