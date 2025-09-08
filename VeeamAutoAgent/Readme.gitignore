@@ -1,0 +1,20 @@
+# Paso 2 — Publicar tu módulo VeeamAutoAgent en GitHub Packages
+
+$modulePath = 'C:\Portfolio\Scripts\VeeamAutoAgent'
+
+# PAT con scope write:packages (y repo si el paquete está ligado a un repo privado)
+$sec  = Read-Host 'Ingresa tu GitHub PAT (write:packages)' -AsSecureString
+$cred = New-Object System.Management.Automation.PSCredential('techmaxuy', $sec)
+
+Publish-PSResource -Path $modulePath -Repository 'GitHubPkgs' -Credential $cred
+
+
+# Asegurate de que tu VeeamAutoAgent.psd1 tenga ModuleVersion, RootModule, etc.
+# Si te da “401/403”, revisá el scope del PAT.
+# Paso 4 — Actualizar versiones
+
+# Sube ModuleVersion en el .psd1.
+
+# Volvé a publicar:
+
+Publish-PSResource -Path 'C:\Portfolio\Scripts\VeeamAutoAgent' -Repository 'GitHubPkgs' -Credential $cred

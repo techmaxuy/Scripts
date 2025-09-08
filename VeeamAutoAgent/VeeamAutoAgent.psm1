@@ -136,6 +136,115 @@ function Unregister-VeeamAutoAgentTask {
     }
 }
 
+# --- Helpers privados DPAPI (no exportar) ---
+function ConvertTo-VAAEncryptedBase64 {
+    param([Parameter(Mandatory)][string]$PlainText)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+    $enc   = [System.Security.Cryptography.ProtectedData]::Protect(
+                $bytes, $null,
+                [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+    [Convert]::ToBase64String($enc)
+}
+
+function ConvertFrom-VAAEncryptedBase64 {
+    param([Parameter(Mandatory)][string]$CipherText)
+    try {
+        $bytes = [Convert]::FromBase64String($CipherText)
+        $plain = [System.Security.Cryptography.ProtectedData]::Unprotect(
+                    $bytes, $null,
+                    [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+        return [System.Text.Encoding]::UTF8.GetString($plain)
+    } catch {
+        throw "No se pudo desencriptar el valor: $($_.Exception.Message)"
+    }
+}
+
+
+function Test-VAAPathReadWrite {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $result = [pscustomobject]@{ Exists = $false; Read = $false; Write = $false }
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $result }
+    $result.Exists = $true
+
+    try {
+        Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop | Out-Null
+        $result.Read = $true
+    } catch {}
+
+    try {
+        $tmpName = [System.IO.Path]::GetRandomFileName()
+        $tmpFile = Join-Path -Path $Path -ChildPath $tmpName
+        [System.IO.File]::WriteAllText($tmpFile, 'probe')
+        Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+        $result.Write = $true
+    } catch {}
+
+    return $result
+}
+
+# --- NUEVA función pública ---
+function Config-VeeamAutoAgent {
+    <#
+    .SYNOPSIS
+        Crea/actualiza el archivo de configuración JSON del agente con valores encriptados.
+    .DESCRIPTION
+        Valida que la ruta de trabajo exista y tenga lectura/escritura. Escribe:
+          C:\scripts\VeeamAutoAgent\Config\config.json
+        Los valores se guardan encriptados con DPAPI en scope LocalMachine,
+        para que puedan ser leídos por la tarea programada ejecutándose como SYSTEM.
+    .PARAMETER RootWorkFolder
+        Ruta de trabajo (local o UNC). Debe existir y permitir lectura/escritura.
+    .OUTPUTS
+        Devuelve la ruta del archivo de configuración generado.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory, Position=0)]
+        [Alias('rootWorkFolder','Path')]
+        [ValidateNotNullOrEmpty()]
+        [string]$RootWorkFolder
+    )
+
+    $p = Get-VAAPaths
+
+    # Directorio de configuración y archivo
+    $configDir  = Join-Path $p.InstallDir 'Config'
+    $configFile = Join-Path $configDir 'config.json'
+
+    # Validación de la ruta de trabajo
+    $rw = Test-VAAPathReadWrite -Path $RootWorkFolder
+    if (-not $rw.Exists) { throw "La ruta '$RootWorkFolder' no existe o no es un directorio." }
+    if (-not $rw.Read)   { throw "No hay permisos de LECTURA en '$RootWorkFolder'." }
+    if (-not $rw.Write)  { throw "No hay permisos de ESCRITURA en '$RootWorkFolder'." }
+
+    # Asegurar carpetas de instalación y de config
+    if (-not (Test-Path -LiteralPath $p.InstallDir)) { New-Item -ItemType Directory -Path $p.InstallDir -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $configDir))    { New-Item -ItemType Directory -Path $configDir  -Force | Out-Null }
+
+    # Construir el objeto de configuración con valores encriptados (Base64 DPAPI LocalMachine)
+    $payload = [ordered]@{
+        SchemaVersion  = 1
+        UpdatedUtc     = (Get-Date).ToUniversalTime().ToString('u')
+        Encrypted      = $true
+        Values         = [ordered]@{
+            RootWorkFolder = (ConvertTo-VAAEncryptedBase64 -PlainText $RootWorkFolder)
+        }
+    }
+
+    $json = $payload | ConvertTo-Json -Depth 6
+
+    if ($PSCmdlet.ShouldProcess($configFile, 'Escribir configuración')) {
+        $json | Set-Content -Path $configFile -Encoding UTF8
+    }
+
+    Write-Host "Configuración escrita en: $configFile"
+    return $configFile
+}
+
+
+
 function Invoke-VeeamAutoAgent {
     <#
     .SYNOPSIS
@@ -145,6 +254,36 @@ function Invoke-VeeamAutoAgent {
         Por ahora, solo deja una traza con fecha/hora para verificar la ejecución.
     #>
     try {
+
+                # === Cargar configuración (RootWorkFolder) ===
+        $p = Get-VAAPaths
+        $configFile = Join-Path $p.InstallDir 'Config\config.json'
+        $workRoot = $null
+        $warn = $null
+
+        if (Test-Path -LiteralPath $configFile) {
+            $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+            if ($cfg -and $cfg.Values -and $cfg.Values.RootWorkFolder) {
+                $workRoot = if ($cfg.Encrypted) {
+                    ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.RootWorkFolder
+                } else {
+                    [string]$cfg.Values.RootWorkFolder
+                }
+            }
+        }
+
+        # Fallback si no hay config o es inválida
+        if (-not $workRoot) { $workRoot = $p.InstallDir }
+
+        # Validar existencia y permisos R/W
+        $rw = Test-VAAPathReadWrite -Path $workRoot
+        if (-not ($rw.Exists -and $rw.Read -and $rw.Write)) {
+            $old = $workRoot
+            $workRoot = $p.InstallDir
+            $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'."
+        }
+
+
         $logDir = Join-Path 'C:\scripts' 'VeeamAutoAgent\logs'
         if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
         $log = Join-Path $logDir ('run-' + (Get-Date -Format 'yyyyMMdd') + '.log')
