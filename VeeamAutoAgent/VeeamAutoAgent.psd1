@@ -11,6 +11,7 @@
         'Install-VeeamAutoAgent',
         'Register-VeeamAutoAgentTask',
         'Unregister-VeeamAutoAgentTask',
+        'Update-VeeamAutoAgentConfig',
         'Invoke-VeeamAutoAgent'
     )
     CmdletsToExport   = @()
