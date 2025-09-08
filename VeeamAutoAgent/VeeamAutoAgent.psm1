@@ -185,7 +185,7 @@ function Test-VAAPathReadWrite {
 }
 
 # --- NUEVA función pública ---
-function Config-VeeamAutoAgent {
+function Update-VeeamAutoAgentConfig {
     <#
     .SYNOPSIS
         Crea/actualiza el archivo de configuración JSON del agente con valores encriptados.

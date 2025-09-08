@@ -1,6 +1,6 @@
 @{
     RootModule        = 'VeeamAutoAgent.psm1'
-    ModuleVersion     = '0.1.5'
+    ModuleVersion     = '0.1.7'
     GUID              = 'b9f0f8a1-8d8f-4a0f-bc5c-5a9a6d3f4a10'
     Author            = 'Maximiliano'
     CompanyName       = 'OpenSource'
