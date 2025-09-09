@@ -20,7 +20,7 @@ function Get-VAAPaths {
     $moduleName  = 'VeeamAutoAgent'
     $taskName    = 'VeeamAutoAgent'
 
-    # Directorio fuente (donde está el módulo actualmente)
+    # Directorio fuente (donde esta el modulo actualmente)
     $sourceDir = Split-Path -Parent $PSScriptRoot
 
     [pscustomobject]@{
@@ -48,13 +48,13 @@ function Register-VeeamAutoAgentTask {
     $p = Get-VAAPaths
 
     if (!(Test-Path $p.RunnerPath)) {
-        throw "Runner no encontrado en $($p.RunnerPath). Primero ejecutá Install-VeeamAutoAgent."
+        throw "Runner no encontrado en $($p.RunnerPath). Primero ejecuta Install-VeeamAutoAgent."
     }
 
-    # Acción: ejecutar PowerShell con el runner
+    # Accion: ejecutar PowerShell con el runner
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $p.RunnerPath)
 
-    # Trigger: una sola vez (ahora) con repetición indefinida cada N minutos
+    # Trigger: una sola vez (ahora) con repeticion indefinida cada N minutos
     $start = (Get-Date).AddMinutes(1)  # arranca en 1 minuto
     $trigger = New-ScheduledTaskTrigger -Once -At $start
     #$trigger.RepetitionInterval = (New-TimeSpan -Minutes $IntervalMinutes)
@@ -63,7 +63,7 @@ function Register-VeeamAutoAgentTask {
     # Principal: SYSTEM con privilegios altos
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
 
-    # Settings: sin superposición, sin límite de tiempo de ejecución
+    # Settings: sin superposicion, sin limite de tiempo de ejecucion
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
@@ -86,7 +86,7 @@ function Register-VeeamAutoAgentTask {
         }
     }
 
-    Write-Host "Tarea programada '$($p.TaskName)' registrada. Ejecutará el agente cada $IntervalMinutes minuto(s) sin superponerse."
+    Write-Host "Tarea programada '$($p.TaskName)' registrada. Ejecutara el agente cada $IntervalMinutes minuto(s) sin superponerse."
 }
 
 
@@ -107,20 +107,19 @@ function Install-VeeamAutoAgent {
     }
 
 
-    # Crear/actualizar el runner que importa el módulo desde C:\scripts y ejecuta la función principal
+    # Crear/actualizar el runner que importa el modulo desde C:\scripts y ejecuta la funcion principal
     $runner = @"
 # Auto-generado por Install-VeeamAutoAgent
-# Runner del agente: importa el módulo y ejecuta la función principal
+# Runner del agente: importa el modulo y ejecuta la funcion principal
 
-# Asegurar política de ejecución amigable con tareas programadas
+# Asegurar politica de ejecucion amigable con tareas programadas
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force | Out-Null
 
-# Importar el módulo desde la carpeta instalada
-\$moduleRoot = '$($p.InstallDir)'
-\$psd1 = Join-Path \$moduleRoot 'VeeamAutoAgent.psd1'
-Import-Module \$psd1 -Force
+# Importar el modulo desde la carpeta instalada
 
-# Ejecutar la lógica principal del agente
+Import-Module VeeamAutoAgent -Force
+
+# Ejecutar la logica principal del agente
 Invoke-VeeamAutoAgent
 "@
 
@@ -151,6 +150,11 @@ function Unregister-VeeamAutoAgentTask {
 # --- Helpers privados DPAPI (no exportar) ---
 function ConvertTo-VAAEncryptedBase64 {
     param([Parameter(Mandatory)][string]$PlainText)
+
+    if (-not ('System.Security.Cryptography.ProtectedData' -as [Type])) {
+    Add-Type -AssemblyName 'System.Security'
+    }
+
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
     $enc   = [System.Security.Cryptography.ProtectedData]::Protect(
                 $bytes, $null,
@@ -161,6 +165,9 @@ function ConvertTo-VAAEncryptedBase64 {
 function ConvertFrom-VAAEncryptedBase64 {
     param([Parameter(Mandatory)][string]$CipherText)
     try {
+        if (-not ('System.Security.Cryptography.ProtectedData' -as [Type])) {
+            Add-Type -AssemblyName 'System.Security'
+        }
         $bytes = [Convert]::FromBase64String($CipherText)
         $plain = [System.Security.Cryptography.ProtectedData]::Unprotect(
                     $bytes, $null,
@@ -196,20 +203,20 @@ function Test-VAAPathReadWrite {
     return $result
 }
 
-# --- NUEVA función pública ---
+# --- NUEVA funcion publica ---
 function Update-VeeamAutoAgentConfig {
     <#
     .SYNOPSIS
-        Crea/actualiza el archivo de configuración JSON del agente con valores encriptados.
+        Crea/actualiza el archivo de configuracion JSON del agente con valores encriptados.
     .DESCRIPTION
         Valida que la ruta de trabajo exista y tenga lectura/escritura. Escribe:
           C:\scripts\VeeamAutoAgent\Config\config.json
         Los valores se guardan encriptados con DPAPI en scope LocalMachine,
-        para que puedan ser leídos por la tarea programada ejecutándose como SYSTEM.
+        para que puedan ser leidos por la tarea programada ejecutandose como SYSTEM.
     .PARAMETER RootWorkFolder
         Ruta de trabajo (local o UNC). Debe existir y permitir lectura/escritura.
     .OUTPUTS
-        Devuelve la ruta del archivo de configuración generado.
+        Devuelve la ruta del archivo de configuracion generado.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -221,21 +228,21 @@ function Update-VeeamAutoAgentConfig {
 
     $p = Get-VAAPaths
 
-    # Directorio de configuración y archivo
+    # Directorio de configuracion y archivo
     $configDir  = Join-Path $p.InstallDir 'Config'
     $configFile = Join-Path $configDir 'config.json'
 
-    # Validación de la ruta de trabajo
+    # Validacion de la ruta de trabajo
     $rw = Test-VAAPathReadWrite -Path $WorkFolder
     if (-not $rw.Exists) { throw "La ruta '$WorkFolder' no existe o no es un directorio." }
     if (-not $rw.Read)   { throw "No hay permisos de LECTURA en '$WorkFolder'." }
     if (-not $rw.Write)  { throw "No hay permisos de ESCRITURA en '$WorkFolder'." }
 
-    # Asegurar carpetas de instalación y de config
+    # Asegurar carpetas de instalacion y de config
     if (-not (Test-Path -LiteralPath $p.InstallDir)) { New-Item -ItemType Directory -Path $p.InstallDir -Force | Out-Null }
     if (-not (Test-Path -LiteralPath $configDir))    { New-Item -ItemType Directory -Path $configDir  -Force | Out-Null }
 
-    # Construir el objeto de configuración con valores encriptados (Base64 DPAPI LocalMachine)
+    # Construir el objeto de configuracion con valores encriptados (Base64 DPAPI LocalMachine)
     $payload = [ordered]@{
         SchemaVersion  = 1
         UpdatedUtc     = (Get-Date).ToUniversalTime().ToString('u')
@@ -247,11 +254,11 @@ function Update-VeeamAutoAgentConfig {
 
     $json = $payload | ConvertTo-Json -Depth 6
 
-    if ($PSCmdlet.ShouldProcess($configFile, 'Escribir configuración')) {
+    if ($PSCmdlet.ShouldProcess($configFile, 'Escribir configuracion')) {
         $json | Set-Content -Path $configFile -Encoding UTF8
     }
 
-    Write-Host "Configuración escrita en: $configFile"
+    Write-Host "Configuracion escrita en: $configFile"
     return $configFile
 }
 
@@ -263,14 +270,23 @@ function Invoke-VeeamAutoAgent {
         Punto de entrada del agente (lee config, valida WorkRoot, cuenta "tareas", etc.)
     #>
     try {
-        Write-VaaLog ("PowerShellVersion = " + $PSVersionTable.PSVersion)
-        Write-VaaLog ("Module Path = " + (Get-Module VeeamAutoAgent).Path)
-        Write-VaaLog ("ProtectedData type OK? " + ([bool]([type]'System.Security.Cryptography.ProtectedData')))
+       # --- Asegurar ensamblado System.Security disponible ---
+        try {
+            # Intento “ligero”: si ya esta, no hace nada
+            if (-not ('System.Security.Cryptography.ProtectedData' -as [Type])) {
+                # Carga explicita del ensamblado
+                Add-Type -AssemblyName 'System.Security' -ErrorAction Stop
+            }
+            Write-VaaLog "System.Security cargado OK."
+        } catch {
+            Write-VaaLog ("ERROR cargando System.Security: {0}" -f $_.Exception.Message)
+        }
+
 
         # Arranque
         Write-VaaLog "VeeamAutoAgent iniciado."
 
-        # === Cargar configuración (RootWorkFolder) ===
+        # === Cargar configuracion (RootWorkFolder) ===
         $p = Get-VAAPaths
         $configFile = Join-Path $p.InstallDir 'Config\config.json'
         $workRoot = $null
@@ -279,7 +295,7 @@ function Invoke-VeeamAutoAgent {
         if (Test-Path -LiteralPath $configFile) {
             try {
                 $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
-                Write-VaaLog "Config file leído: $configFile"
+                Write-VaaLog "Config file leido: $configFile"
 
                 # Acepta RootWorkFolder (correcto) o WorkFolder (compat)
                 $cipher = $null
@@ -304,12 +320,12 @@ function Invoke-VeeamAutoAgent {
                 Write-VaaLog ("ERROR leyendo config.json: " + ($_.Exception.Message))
             }
         } else {
-            Write-VaaLog "Archivo de configuración no encontrado en '$configFile'. Usando carpeta de instalación."
+            Write-VaaLog "Archivo de configuracion no encontrado en '$configFile'. Usando carpeta de instalacion."
         }
 
         Write-VaaLog "Test1"
 
-        # Fallback si no hay config o es inválida
+        # Fallback si no hay config o es invalida
         if (-not $workRoot) { $workRoot = $p.InstallDir }
 
         Write-VaaLog "Test2"
@@ -325,7 +341,7 @@ function Invoke-VeeamAutoAgent {
 
         Write-VaaLog "Test3"
         Write-VaaLog ("Usando RootWorkFolder: {0}" -f $workRoot)
-        Write-VaaLog "Lógica del agente iniciada (stub)."
+        Write-VaaLog "Logica del agente iniciada (stub)."
 
         # === Conteo de "tareas" (archivos) en la carpeta de trabajo ===
         try {
@@ -344,10 +360,233 @@ function Invoke-VeeamAutoAgent {
 
         Write-VaaLog "VeeamAutoAgent finalizado."
     } catch {
-        # Asegura que los errores queden en el log (también si falló algo antes)
+        # Asegura que los errores queden en el log (tambien si fallo algo antes)
         $msg = "EXCEPTION: " + ($_.Exception | Out-String)
         try { Write-VaaLog $msg } catch { }
         throw
     }
 }
 
+function Test-VeeamAutoAgent {
+    <#
+    .SYNOPSIS
+        Diagnostico integral del agente (entorno, config, permisos, tarea programada).
+    .OUTPUTS
+        PSCustomObject con el detalle del diagnostico y OverallPass.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $result = [ordered]@{
+        TimestampUtc      = (Get-Date).ToUniversalTime().ToString('u')
+        PSVersion         = $PSVersionTable.PSVersion.ToString()
+        Is64BitProcess    = [Environment]::Is64BitProcess
+        ModulePath        = $null
+        ModuleVersion     = $null
+        DPAPIAvailable    = $false
+        ConfigPath        = $null
+        ConfigEncrypted   = $null
+        ConfigReadOk      = $false
+        ConfigDecryptOk   = $false
+        WorkRoot          = $null
+        WorkRootExists    = $false
+        WorkRootCanRead   = $false
+        WorkRootCanWrite  = $false
+        TaskRegistered    = $false
+        TaskUser          = $null
+        TaskRunLevel      = $null
+        TaskAction        = $null
+        TaskArguments     = $null
+        TaskUsesRunner    = $false
+        TaskTriggerOK     = $false
+        NextRunTime       = $null
+        LastRunTime       = $null
+        LastTaskResult    = $null
+        State             = $null
+        OverallPass       = $false
+        Notes             = @()
+    }
+
+    try {
+        # --- Asegurar ensamblado System.Security disponible ---
+        try {
+            if (-not ('System.Security.Cryptography.ProtectedData' -as [Type])) {
+                Add-Type -AssemblyName 'System.Security' -ErrorAction Stop
+            }
+            $result.DPAPIAvailable = $true
+            Write-VaaLog "System.Security cargado OK."
+        } catch {
+            Write-VaaLog ("ERROR cargando System.Security: {0}" -f $_.Exception.Message)
+            $result.Notes += "System.Security no disponible: $($_.Exception.Message)"
+        }
+
+        # --- Modulo actual ---
+        $mod = Get-Module VeeamAutoAgent
+        if (-not $mod) {
+            # Si no esta cargado (raro dentro del propio modulo), intenta resolver el mas nuevo disponible
+            $mod = Get-Module VeeamAutoAgent -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
+        }
+        if ($mod) {
+            $result.ModulePath    = $mod.Path
+            $result.ModuleVersion = $mod.Version.ToString()
+        }
+        Write-VaaLog ("PS = {0}; Proc = {1}-bit; Module = {2}; Version = {3}" -f `
+            $result.PSVersion, ($(if($result.Is64BitProcess){'64'}else{'32'})), $result.ModulePath, $result.ModuleVersion)
+
+        # --- Paths / Config ---
+        $p = Get-VAAPaths
+        $configFile = Join-Path $p.InstallDir 'Config\config.json'
+        $result.ConfigPath = $configFile
+
+        $workRoot = $null
+        if (Test-Path -LiteralPath $configFile) {
+            try {
+                $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+                $result.ConfigReadOk    = $true
+                $result.ConfigEncrypted = [bool]$cfg.Encrypted
+                Write-VaaLog "Config leido: $configFile"
+
+                $cipher = $null
+                if ($cfg -and $cfg.Values) {
+                    if ($cfg.Values.RootWorkFolder) { $cipher = $cfg.Values.RootWorkFolder }
+                    elseif ($cfg.Values.WorkFolder) { $cipher = $cfg.Values.WorkFolder } # compat
+                }
+
+                if ($cipher) {
+                    if ($cfg.Encrypted) {
+                        try {
+                            if (-not $result.DPAPIAvailable) { throw "DPAPI no disponible" }
+                            $workRoot = ConvertFrom-VAAEncryptedBase64 -CipherText $cipher
+                            $result.ConfigDecryptOk = $true
+                        } catch {
+                            $result.ConfigDecryptOk = $false
+                            $result.Notes += "Fallo desencriptando RootWorkFolder: $($_.Exception.Message)"
+                            Write-VaaLog ("ERROR desencriptando RootWorkFolder: {0}" -f $_.Exception.Message)
+                        }
+                    } else {
+                        $workRoot = [string]$cipher
+                        $result.ConfigDecryptOk = $true
+                    }
+                } else {
+                    $result.Notes += "Config sin RootWorkFolder/WorkFolder."
+                    Write-VaaLog "Config sin RootWorkFolder/WorkFolder."
+                }
+            } catch {
+                $result.ConfigReadOk = $false
+                $result.Notes += "Fallo leyendo config.json: $($_.Exception.Message)"
+                Write-VaaLog ("ERROR leyendo config.json: {0}" -f $_.Exception.Message)
+            }
+        } else {
+            $result.Notes += "Config no encontrado; usando carpeta de instalacion."
+            Write-VaaLog "Config no encontrado; usando carpeta de instalacion."
+        }
+
+        if (-not $workRoot) { $workRoot = $p.InstallDir }
+        $result.WorkRoot = $workRoot
+
+        # --- Validacion R/W de WorkRoot ---
+        $rw = Test-VAAPathReadWrite -Path $workRoot
+        $result.WorkRootExists = [bool]$rw.Exists
+        $result.WorkRootCanRead = [bool]$rw.Read
+        $result.WorkRootCanWrite = [bool]$rw.Write
+
+        if ($result.WorkRootExists -and $result.WorkRootCanRead -and $result.WorkRootCanWrite) {
+            Write-VaaLog ("WorkRoot OK: {0} (R/W)" -f $workRoot)
+        } else {
+            Write-VaaLog ("WARN WorkRoot no utilizable: {0} (Exists={1} Read={2} Write={3})" -f `
+                $workRoot, $result.WorkRootExists, $result.WorkRootCanRead, $result.WorkRootCanWrite)
+            $result.Notes += "WorkRoot no utilizable."
+        }
+
+                # --- Tarea programada ---
+            $task = Get-ScheduledTask -TaskName $p.TaskName -ErrorAction SilentlyContinue
+            if ($task) {
+                $result.TaskRegistered = $true
+
+                # Principal (con guardas)
+                $result.TaskUser     = ($task.Principal.UserId    | ForEach-Object { $_ }) # null-safe
+                $result.TaskRunLevel = if ($task.Principal.RunLevel) { [string]$task.Principal.RunLevel } else { $null }
+
+
+                # Accion y argumentos (guardado por si no hay acciones)
+                $act = $null
+                try { $act = $task.Actions | Select-Object -First 1 } catch {}
+                if ($act) {
+                    $result.TaskAction    = $act.Execute
+                    $result.TaskArguments = $act.Arguments
+                }
+
+                # ¿Apunta al runner correcto?
+                $runnerOk = $false
+                if ($result.TaskArguments) {
+                    $runnerOk = ($result.TaskArguments -like ("*-File*{0}*" -f $p.RunnerPath)) -or
+                                ($result.TaskArguments -like ("*`"{0}`"*" -f $p.RunnerPath))
+                }
+                $result.TaskUsesRunner = $runnerOk
+
+                # Trigger con repeticion (segun version de Windows puede variar la propiedad)
+                $result.TaskTriggerOK = $false
+                try {
+                    $t = $task.Triggers | Select-Object -First 1
+                    if ($t) {
+                        $repInt = $null
+                        if ($t.PSObject.Properties.Name -contains 'RepetitionInterval') {
+                            $repInt = $t.RepetitionInterval
+                        } elseif ($t.Repetition -and $t.Repetition.Interval) {
+                            $repInt = $t.Repetition.Interval
+                        }
+                        if ($repInt -and ($repInt -ne [TimeSpan]::Zero)) { $result.TaskTriggerOK = $true }
+                    }
+                } catch {}
+
+                ## Info dinamica (puede devolver $null: tolerarlo)
+                $ti = $null
+                try { $ti = Get-ScheduledTaskInfo -TaskName $p.TaskName -ErrorAction Stop } catch {}
+
+                # Inicializar en null-safe
+                $result.NextRunTime    = $null
+                $result.LastRunTime    = $null
+                $result.LastTaskResult = $null
+                $result.State          = $null
+
+                if ($ti) {
+                    # Algunas propiedades pueden no existir segun version de SO / estado de la tarea
+                    if ($ti.PSObject.Properties.Name -contains 'NextRunTime')    { $result.NextRunTime    = $ti.NextRunTime }
+                    if ($ti.PSObject.Properties.Name -contains 'LastRunTime')    { $result.LastRunTime    = $ti.LastRunTime }
+                    if ($ti.PSObject.Properties.Name -contains 'LastTaskResult') { $result.LastTaskResult = $ti.LastTaskResult }
+                    if ($ti.PSObject.Properties.Name -contains 'State' -and $ti.State) {
+                        $result.State = [string]$ti.State
+                    }
+                } else {
+                    $result.Notes += "Get-ScheduledTaskInfo devolvio NULL (tarea deshabilitada/permiso/glitch)."
+                }
+
+
+                Write-VaaLog ("Task '{0}': User={1}; RunLevel={2}; Action={3}; RunnerOK={4}; TriggerOK={5}; Next={6}; LastResult={7}; State={8}" -f `
+                    $p.TaskName, $result.TaskUser, $result.TaskRunLevel, $result.TaskAction, $result.TaskUsesRunner, $result.TaskTriggerOK, $result.NextRunTime, $result.LastTaskResult, $result.State)
+            } else {
+                Write-VaaLog ("Task '{0}' NO registrada." -f $p.TaskName)
+                $result.Notes += "Tarea no registrada."
+            }
+
+
+        # --- Overall ---
+        $result.OverallPass =
+            $result.DPAPIAvailable -and
+            $result.ConfigReadOk -and
+            $result.ConfigDecryptOk -and
+            $result.WorkRootExists -and
+            $result.WorkRootCanRead -and
+            $result.WorkRootCanWrite -and
+            $result.TaskRegistered -and
+            $result.TaskUsesRunner -and
+            $result.TaskTriggerOK
+
+
+        Write-VaaLog ("TEST RESULT: {0}" -f ($(if ($result.OverallPass) { 'PASS' } else { 'FAIL' })))
+        return [pscustomobject]$result
+    } catch {
+        Write-VaaLog ("EXCEPTION en Test-VeeamAutoAgent: {0}" -f $_.Exception.Message)
+        throw
+    }
+}
