@@ -204,7 +204,7 @@ function Test-VAAPathReadWrite {
 }
 
 # --- NUEVA funcion publica ---
-function Update-VeeamAutoAgentConfig {
+function Update-VeeamAutoAgentWorkFolder {
     <#
     .SYNOPSIS
         Crea/actualiza el archivo de configuracion JSON del agente con valores encriptados.
@@ -262,6 +262,114 @@ function Update-VeeamAutoAgentConfig {
     return $configFile
 }
 
+function Update-VeeamAutoAgentRoles {
+  [CmdletBinding(SupportsShouldProcess)]
+  param(
+    [string[]]$AddRole,
+    [string[]]$RemoveRole,
+    [switch]$List,
+    [switch]$Clear
+  )
+
+  $p = Get-VAAPaths
+  $configDir  = Join-Path $p.InstallDir 'Config'
+  $configFile = Join-Path $configDir 'config.json'
+  if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
+
+  # Cargar o base mínima
+  if (Test-Path $configFile) {
+    $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+  } else {
+    if (-not ('System.Security.Cryptography.ProtectedData' -as [Type])) { Add-Type -AssemblyName 'System.Security' }
+    $encRoot = ConvertTo-VAAEncryptedBase64 -PlainText $p.InstallDir
+    $cfg = [ordered]@{
+      SchemaVersion = 1
+      UpdatedUtc    = (Get-Date).ToUniversalTime().ToString('u')
+      Encrypted     = $true
+      Values        = [ordered]@{ RootWorkFolder = $encRoot }
+      Roles         = @()
+    }
+  }
+
+  # Leer roles actuales (raíz preferida)
+  $roles = @()
+  if ($cfg.PSObject.Properties.Name -contains 'Roles' -and $cfg.Roles) { $roles = @($cfg.Roles) }
+  elseif ($cfg.Values -and $cfg.Values.Roles) { $roles = @($cfg.Values.Roles) }
+
+  if ($List) {
+    Write-Output ($roles -join ', ')
+    return
+  }
+
+  if ($Clear) {
+    $cfg.Roles = @()
+  } else {
+    $set = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($r in $roles) { if ($r) { [void]$set.Add($r) } }
+
+    foreach ($r in ($AddRole | Where-Object { $_ })) {
+      switch ($r.ToLowerInvariant()) {
+        'backupreport' { [void]$set.Add('BackupReport') }
+        default        { Write-Warning "Rol no reconocido: '$r'. Se ignora." }
+      }
+    }
+    foreach ($r in ($RemoveRole | Where-Object { $_ })) { [void]$set.Remove($r) }
+
+    $cfg.Roles = @($set)
+    if ($cfg.Values -and $cfg.Values.PSObject.Properties.Name -contains 'Roles') {
+      $cfg.Values.PSObject.Properties.Remove('Roles') | Out-Null
+    }
+  }
+
+  $cfg.UpdatedUtc = (Get-Date).ToUniversalTime().ToString('u')
+  $json = $cfg | ConvertTo-Json -Depth 8
+  if ($PSCmdlet.ShouldProcess($configFile, 'Actualizar roles')) {
+    $json | Set-Content -Path $configFile -Encoding UTF8
+  }
+  Write-VaaLog ("Update-VeeamAutoAgentRoles: Roles = {0}" -f (($cfg.Roles) -join ', '))
+  ,$cfg.Roles
+}
+
+
+
+
+function Invoke-VAA-Task-BackupReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$WorkRoot
+    )
+    Write-VaaLog "Role[BackupReport]: inicio."
+    try {
+        # Verificar módulo de Veeam
+        $veeMod = Get-Module -ListAvailable -Name 'Veeam.Backup.PowerShell' | Select-Object -First 1
+        if (-not $veeMod) {
+            Write-VaaLog "Role[BackupReport]: módulo 'Veeam.Backup.PowerShell' no está instalado; se omite."
+            return
+        }
+
+        Import-Module 'Veeam.Backup.PowerShell' -ErrorAction Stop
+
+        # Ejemplo simple: contar jobs y dejar CSV (si se puede)
+        $jobs = $null
+        try { $jobs = Get-VBRJob -ErrorAction Stop } catch {}
+
+        if ($jobs) {
+            $count = $jobs.Count
+            Write-VaaLog ("Role[BackupReport]: jobs detectados = {0}" -f $count)
+
+            $out = Join-Path $WorkRoot ("BackupReport-{0}.csv" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+            $jobs | Select-Object Name, Type, IsScheduleEnabled, LastResult, LastRunLocal |
+                Export-Csv -Path $out -NoTypeInformation -Encoding UTF8
+            Write-VaaLog ("Role[BackupReport]: reporte generado: {0}" -f $out)
+        } else {
+            Write-VaaLog "Role[BackupReport]: no hay jobs o no hay permisos para listarlos."
+        }
+    } catch {
+        Write-VaaLog ("Role[BackupReport] ERROR: {0}" -f $_.Exception.Message)
+    } finally {
+        Write-VaaLog "Role[BackupReport]: fin."
+    }
+}
 
 
 function Invoke-VeeamAutoAgent {
@@ -323,12 +431,8 @@ function Invoke-VeeamAutoAgent {
             Write-VaaLog "Archivo de configuracion no encontrado en '$configFile'. Usando carpeta de instalacion."
         }
 
-        Write-VaaLog "Test1"
-
         # Fallback si no hay config o es invalida
         if (-not $workRoot) { $workRoot = $p.InstallDir }
-
-        Write-VaaLog "Test2"
 
         # Validar existencia y permisos R/W
         $rw = Test-VAAPathReadWrite -Path $workRoot
@@ -339,9 +443,41 @@ function Invoke-VeeamAutoAgent {
             Write-VaaLog $warn
         }
 
-        Write-VaaLog "Test3"
         Write-VaaLog ("Usando RootWorkFolder: {0}" -f $workRoot)
         Write-VaaLog "Logica del agente iniciada (stub)."
+
+        # === Leer Roles del config ===
+        $roles = @()
+        try {
+            # $cfg viene del bloque previo donde leíste config.json
+            if ($cfg) {
+                if ($cfg.PSObject.Properties.Name -contains 'Roles' -and $cfg.Roles) {
+                    $roles = @($cfg.Roles)
+                } elseif ($cfg.Values -and $cfg.Values.Roles) { # compat si alguna vez guardaste bajo Values
+                    $roles = @($cfg.Values.Roles)
+                }
+            }
+        } catch {
+            Write-VaaLog ("WARN leyendo roles: {0}" -f $_.Exception.Message)
+        }
+
+        if ($roles.Count -gt 0) {
+            Write-VaaLog ("Roles activos: {0}" -f ($roles -join ', '))
+            # === Tareas por rol (se ejecutan en cada invocación) ===
+            foreach ($role in $roles) {
+                switch (($role -as [string]).ToLowerInvariant()) {
+                    'backupreport' {
+                        Invoke-VAA-Task-BackupReport -WorkRoot $workRoot
+                    }
+                    default {
+                        Write-VaaLog ("WARN rol desconocido/ no soportado: {0}" -f $role)
+                    }
+                }
+            }
+        } else {
+            Write-VaaLog "No hay roles configurados; se omiten tareas por invocación."
+        }
+
 
         # === Conteo de "tareas" (archivos) en la carpeta de trabajo ===
         try {
