@@ -1,3 +1,15 @@
+function Write-VaaLog {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [string]$LogDir = (Join-Path 'C:\scripts' 'VeeamAutoAgent\logs')
+    )
+    if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+    $log = Join-Path $LogDir ('run-' + (Get-Date -Format 'yyyyMMdd') + '.log')
+    "[{0}] {1}" -f (Get-Date -Format 'u'), $Message | Out-File -FilePath $log -Append -Encoding utf8
+}
+
+
+
 function Get-VAAPaths {
     [CmdletBinding()]
     param()
@@ -248,87 +260,94 @@ function Update-VeeamAutoAgentConfig {
 function Invoke-VeeamAutoAgent {
     <#
     .SYNOPSIS
-        Punto de entrada del agente. (Placeholder)
-    .DESCRIPTION
-        Acá irá la lógica real: comprobar módulo de Veeam, ejecutar jobs, reportar, etc.
-        Por ahora, solo deja una traza con fecha/hora para verificar la ejecución.
+        Punto de entrada del agente (lee config, valida WorkRoot, cuenta "tareas", etc.)
     #>
     try {
+        Write-VaaLog ("PowerShellVersion = " + $PSVersionTable.PSVersion)
+        Write-VaaLog ("Module Path = " + (Get-Module VeeamAutoAgent).Path)
+        Write-VaaLog ("ProtectedData type OK? " + ([bool]([type]'System.Security.Cryptography.ProtectedData')))
 
-                $logDir = Join-Path 'C:\scripts' 'VeeamAutoAgent\logs'
-        if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-        $log = Join-Path $logDir ('run-' + (Get-Date -Format 'yyyyMMdd') + '.log')
-        "[$(Get-Date -Format 'u')] VeeamAutoAgent ejecutado (stub)." | Out-File -FilePath $log -Append -Encoding utf8
+        # Arranque
+        Write-VaaLog "VeeamAutoAgent iniciado."
 
-                # === Cargar configuración (RootWorkFolder) ===
+        # === Cargar configuración (RootWorkFolder) ===
         $p = Get-VAAPaths
         $configFile = Join-Path $p.InstallDir 'Config\config.json'
         $workRoot = $null
         $warn = $null
 
         if (Test-Path -LiteralPath $configFile) {
-            $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
-            "[$(Get-Date -Format 'u')] Config file leido." | Out-File -FilePath $log -Append -Encoding utf8
+            try {
+                $cfg = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+                Write-VaaLog "Config file leído: $configFile"
 
-            if ($cfg -and $cfg.Values -and $cfg.Values.WorkFolder) {
-                $workRoot = if ($cfg.Encrypted) {
-                    ConvertFrom-VAAEncryptedBase64 -CipherText $cfg.Values.WorkFolder
-                } else {
-                    [string]$cfg.Values.WorkFolder
+                # Acepta RootWorkFolder (correcto) o WorkFolder (compat)
+                $cipher = $null
+                if ($cfg -and $cfg.Values) {
+                    if ($cfg.Values.RootWorkFolder) { $cipher = $cfg.Values.RootWorkFolder }
+                    elseif ($cfg.Values.WorkFolder) { $cipher = $cfg.Values.WorkFolder }
                 }
+
+                if ($cipher) {
+                    if ($cfg.Encrypted) {
+                        try {
+                            $workRoot = ConvertFrom-VAAEncryptedBase64 -CipherText $cipher
+                        } catch {
+                            Write-VaaLog ("ERROR desencriptando RootWorkFolder: " + ($_.Exception.Message))
+                            $workRoot = $null
+                        }
+                    } else {
+                        $workRoot = [string]$cipher
+                    }
+                }
+            } catch {
+                Write-VaaLog ("ERROR leyendo config.json: " + ($_.Exception.Message))
             }
         } else {
-           "[$(Get-Date -Format 'u')] Archivo de configuración no encontrado en '$configFile'. Usando carpeta de instalación." | Out-File -FilePath $log -Append -Encoding utf8
+            Write-VaaLog "Archivo de configuración no encontrado en '$configFile'. Usando carpeta de instalación."
         }
 
-        "[$(Get-Date -Format 'u')] Test1." | Out-File -FilePath $log -Append -Encoding utf8
+        Write-VaaLog "Test1"
 
         # Fallback si no hay config o es inválida
         if (-not $workRoot) { $workRoot = $p.InstallDir }
 
-        "[$(Get-Date -Format 'u')] Test2." | Out-File -FilePath $log -Append -Encoding utf8
+        Write-VaaLog "Test2"
 
         # Validar existencia y permisos R/W
         $rw = Test-VAAPathReadWrite -Path $workRoot
         if (-not ($rw.Exists -and $rw.Read -and $rw.Write)) {
             $old = $workRoot
             $workRoot = $p.InstallDir
-            $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'." | Out-File -FilePath $log -Append -Encoding utf8
+            $warn = "RootWorkFolder '$old' no es utilizable (Exists=$($rw.Exists) Read=$($rw.Read) Write=$($rw.Write)). Usando '$workRoot'."
+            Write-VaaLog $warn
         }
 
-        "[$(Get-Date -Format 'u')] Test3." | Out-File -FilePath $log -Append -Encoding utf8
-
-        if ($warn) {
-            $warn | Out-File -FilePath $log -Append -Encoding utf8
-        } else {
-            "Usando RootWorkFolder: $workRoot" | Out-File -FilePath $log -Append -Encoding utf8
-        }
-
-        # Aquí va la lógica real del agente...
-        # Placeholder para la lógica del agente
-        "[$(Get-Date -Format 'u')] Lógica del agente iniciada (stub)." | Out-File -FilePath $log -Append -Encoding utf8
+        Write-VaaLog "Test3"
+        Write-VaaLog ("Usando RootWorkFolder: {0}" -f $workRoot)
+        Write-VaaLog "Lógica del agente iniciada (stub)."
 
         # === Conteo de "tareas" (archivos) en la carpeta de trabajo ===
         try {
-            # Conteo NO recursivo; sólo archivos (no carpetas)
+            # NO recursivo; solo archivos
             $files = Get-ChildItem -LiteralPath $workRoot -File -Force -ErrorAction Stop
             $taskCount = ($files | Measure-Object).Count
 
             if ($taskCount -gt 0) {
-                $lines += "Tareas encontradas: $taskCount" | Out-File -FilePath $log -Append -Encoding utf8
+                Write-VaaLog ("Tareas encontradas: {0}" -f $taskCount)
             } else {
-                $lines += "No se encontraron tareas en '$workRoot'." | Out-File -FilePath $log -Append -Encoding utf8
+                Write-VaaLog ("No se encontraron tareas en '{0}'." -f $workRoot)
             }
+        } catch {
+            Write-VaaLog ("ERROR al listar '{0}': {1}" -f $workRoot, ($_.Exception.Message))
         }
-        catch {
-            $lines += "ERROR al listar '$workRoot': $($_.Exception.Message)" | Out-File -FilePath $log -Append -Encoding utf8
-        }
 
-
-        "[$(Get-Date -Format 'u')] VeeamAutoAgent finalizado." | Out-File -FilePath $log -Append -Encoding utf8
-
-
+        Write-VaaLog "VeeamAutoAgent finalizado."
     } catch {
-        Write-Error $_ | Out-File -FilePath $log -Append -Encoding utf8
+        # Asegura que los errores queden en el log (también si falló algo antes)
+        $msg = "EXCEPTION: " + ($_.Exception | Out-String)
+        try { Write-VaaLog $msg } catch { }
+        throw
     }
 }
+
